@@ -6,6 +6,7 @@ const morgan = require("morgan");
 
 
 
+
 //Middleware
 app.use(express.urlencoded({extended:false}));
 app.use(express.json());
@@ -34,28 +35,66 @@ const session = require('express-session');
 app.use(session({
     secret:'secret',
     resave:'true',
-    saveUnitialazed:'true'
+    saveUninitialized:'true'
 }));
 
 
 //conexion
-const connection = require('./database/db');
+const { connect } = require('tls');
+const database = require('./database/db');
 
 //autenticacion
-app.get('/',(req,res)=>{
-    if(req.session.loggedin){
-        res.render('index',{
-            login: true,
-            name: req.session.name
+app.get('/', async (req, res) => {
+    try {
+      if (req.session.loggedin) {
+        res.render('index', {
+          login: true,
+          name: req.session.name
         });
-    }else{
-            res.render('index',{
-                login:false,
-                name: 'Debe iniciar sesion'
-            })
-        
+      } else {
+        res.render('index', {
+          login: false,
+          name: 'Debe iniciar sesion'
+        });
+      }
+    } catch (error) {
+      console.error('Error en la ruta /:', error);
+      // Puedes manejar el error de alguna manera específica o simplemente enviar un mensaje genérico al cliente
+      res.status(500).send('Error interno del servidor');
     }
-})
+  });
+  
+//login
+app.post('/auth', async (req, res) => {
+    const user = req.body.user;
+    const password = req.body.password;
+
+    try {
+        const connection = await database.getConnection();
+
+        const results = await connection.query('SELECT * FROM usuario WHERE user = ? ', [user]);
+
+        if (!results || results.length == 0 || !(await bcryptjs.compare(password, results[0].password))) {
+            // Manejar autenticación fallida
+            res.render('login', {
+                alert: true,
+                alertTitle: "Error de autenticación",
+                alertMessage: "Usuario o contraseña incorrectos",
+                alertImageUrl: "...", // Url de la imagen de error
+                alertImageWidth: 150,
+                alertImageHeight: 150,
+                ruta: ''
+            });
+        } else {
+            // Autenticación exitosa: Establecer sesión y redirigir a la página principal
+            req.session.loggedin = true;
+            req.session.name = results[0].name;
+            res.redirect('/');
+        }
+    } catch (error) {
+        console.log(error);
+    }
+});
 app.get('/conjuntoH',(req,res)=>{
     if(req.session.loggedin){
         res.render('conjuntoH',{
@@ -150,80 +189,42 @@ app.get('/index', (req, res) => {
 });
 
 //REGISTER
-app.post('/register',async(req,res)=>{
+app.post('/register', async (req, res) => {
     const user = req.body.user;
     const name = req.body.name;
     const rol = req.body.rol;
     const password = req.body.password;
-    let passwordHaash = await bcryptjs.hash(password,8);
-    connection.query('INSERT INTO usuario SET ?',{user:user,name:name,rol:rol,password:passwordHaash},async(error,results)=>{
-        if(error){
-            console.log(error)
-        }else{
 
-            res.render('register',{
-                alert: true,
-                alertTitle: "Registro",
-                alertMessage:"Registro Exitoso!",
-                alertImageUrl: "https://blogger.googleusercontent.com/img/a/AVvXsEilqJA5TbPmuqCjpuhCSYj5Yv8S50PshGD4WNq3l29yBqlR9Ejv5V4nXVPkxSmmpkZZr1CyzIdvECvynQ0hKTYtPLabO66txTzqrnl-H0QsE22NRCU12V9PYtzAVXlqqsta-eFpqSK4rhkfvuYNMJoYQf8l1-UVjy8pZSiGGlfmLWz5mzkkkVzbVJunM_I=w640-h640",
-                alertImageWidth: 150,
-                alertImageHeight: 150,
-                ruta:'login'
-            })
-        }
-    })
+    try {
+        const connection = await database.getConnection();
+        let passwordHash = await bcryptjs.hash(password, 8);
 
-})
+        const results = await connection.query('INSERT INTO usuario SET ?', { user: user, name: name, rol: rol, password: passwordHash });
 
-//LOGIN
-app.post('/auth',async(req,res)=>{
-    const user = req.body.user;
-    const password = req.body.password;
-    let passwordHaash = await bcryptjs.hash(password,8);
-    if(user && password){
-        connection.query('SELECT * FROM usuario WHERE user = ? ',[user], async(error,results)=>{
-            
-            if(!results||results.length==0 || !(await bcryptjs.compare(password, results[0].password))){
-               
-                res.render('login',{
-                alert: true,
-                alertTitle: "Error",
-                alertMessage:"Usuario o password incorrectos",
-                alertImageUrl: "https://4.bp.blogspot.com/-syXhVWFDNlo/XJvq1xJBnsI/AAAAAAAAJdY/pGeef8mUre8QLy2FPp9MAA1xUcKahig_ACLcBGAs/s640/Grumpy%2Bbear%2B2.png",
-                alertImageWidth: 150,
-                alertImageHeight: 150,
-                ruta:'login'
-                })
-            }else{
-                req.session.loggedin = true;
-                req.session.name=results[0].name;
-                res.render('login',{
-                    alert: true,
-                alertTitle: "¡Bienvenido otra vez!",
-                alertMessage:"Login correcto",
-                alertImageUrl: "https://blogger.googleusercontent.com/img/a/AVvXsEhwSB-p6wChNLqCP0nI0tBhiiLuC71Rnv_6Px3rrtq3URgVU7tKRGwB9SdRzeMyD2H695vJBmKMcFz5fXvg5l9cgD8rbgd4beh5wPQZf4VNc-XEpfAYyWNEuiwkKhn-JzkTiV7UNVpDqJUBw1GRQe3VUJ8rkhKzconRErq7e3lOZWp0gP6o5VlqpyJuWc8=w456-h640",
-                alertImageWidth: 200,
-                alertImageHeight: 300,
-                ruta:''
-                })
-            }
-        })
-    }else{
-        res.render('login',{
-
+        res.render('register', {
             alert: true,
-                alertTitle: "Error",
-                alertMessage:"Porfavor ingrese un usuario y/o password",
-                alertImageUrl: "https://4.bp.blogspot.com/-syXhVWFDNlo/XJvq1xJBnsI/AAAAAAAAJdY/pGeef8mUre8QLy2FPp9MAA1xUcKahig_ACLcBGAs/s640/Grumpy%2Bbear%2B2.png",
-                alertImageWidth: 150,
-                alertImageHeight: 150,
-                ruta:'login'
-
-        })
+            alertTitle: "Registro",
+            alertMessage: "Registro Exitoso!",
+            alertImageUrl: "https://blogger.googleusercontent.com/img/a/AVvXsEilqJA5TbPmuqCjpuhCSYj5Yv8S50PshGD4WNq3l29yBqlR9Ejv5V4nXVPkxSmmpkZZr1CyzIdvECvynQ0hKTYtPLabO66txTzqrnl-H0QsE22NRCU12V9PYtzAVXlqqsta-eFpqSK4rhkfvuYNMJoYQf8l1-UVjy8pZSiGGlfmLWz5mzkkkVzbVJunM_I=w640-h640",
+            alertImageWidth: 150,
+            alertImageHeight: 150,
+            ruta: 'login'
+        });
+    } catch (error) {
+        console.log(error);
+        res.render('register', {
+            alert: true,
+            alertTitle: "Error",
+            alertMessage: "Hubo un error al procesar su solicitud",
+            alertImageUrl: "https://4.bp.blogspot.com/-syXhVWFDNlo/XJvq1xJBnsI/AAAAAAAAJdY/pGeef8mUre8QLy2FPp9MAA1xUcKahig_ACLcBGAs/s640/Grumpy%2Bbear%2B2.png",
+            alertImageWidth: 150,
+            alertImageHeight: 150,
+            ruta: ''
+        });
     }
+});
 
-}
-)
+
 app.post('/enviarContacto', async (req, res) => {
     const nombre = req.body.nombre;
     const email = req.body.email;
@@ -256,37 +257,16 @@ app.post('/enviarContacto', async (req, res) => {
     });
 });
 
-app.get('/eliminarCuenta', (req, res) => {
-    if (req.session.loggedin) {
-        res.render('eliminarCuenta', {
-            login: true,
-            name: req.session.name
-        });
-    } else {
-        login: false,
-        res.redirect('/login');
-    }
-});
-//eliminar cuenta
+// ELIMINAR CUENTA
 app.post('/eliminarCuenta', async (req, res) => {
-   
+    try {
+        if (req.session.loggedin) {
+            const user = req.body.user;
+            const connection = await database.getConnection();
 
-    if (req.session.loggedin) {
-        const user = req.body.user;
-        connection.query('DELETE FROM usuario WHERE user = ?', [user], async (error, results) => {
-           
-            if (error) {
-                console.log(error);
-                res.render('eliminarCuenta', {
-                    alert: true,
-                    alertTitle: "Error",
-                    alertMessage: "Hubo un error al eliminar su cuenta",
-                    alertImageUrl: "https://4.bp.blogspot.com/-syXhVWFDNlo/XJvq1xJBnsI/AAAAAAAAJdY/pGeef8mUre8QLy2FPp9MAA1xUcKahig_ACLcBGAs/s640/Grumpy%2Bbear%2B2.png",
-                    alertImageWidth: 150,
-                    alertImageHeight: 150,
-                    ruta: ''
-                });
-            } else {
+            const results = await connection.query('DELETE FROM usuario WHERE user = ?', [user]);
+
+            if (results.affectedRows > 0) {
                 req.session.destroy(() => {
                     res.render('eliminarCuenta', {
                         alert: true,
@@ -297,17 +277,39 @@ app.post('/eliminarCuenta', async (req, res) => {
                         alertImageHeight: 150,
                         ruta: ''
                     });
-                 });
+                });
+            } else {
+                res.render('eliminarCuenta', {
+                    alert: true,
+                    alertTitle: "Error",
+                    alertMessage: "Hubo un error al eliminar su cuenta",
+                    alertImageUrl: "https://4.bp.blogspot.com/-syXhVWFDNlo/XJvq1xJBnsI/AAAAAAAAJdY/pGeef8mUre8QLy2FPp9MAA1xUcKahig_ACLcBGAs/s640/Grumpy%2Bbear%2B2.png",
+                    alertImageWidth: 150,
+                    alertImageHeight: 150,
+                    ruta: ''
+                });
             }
-        });
-    } else {
-        res.redirect('/login');
+        } else {
+            res.redirect('/login');
+        }
+    } catch (error) {
+        console.log(error);
+    
     }
-}); 
+});
 
 
-app.set('port', process.env.PORT||4000);
+app.set('port',4000);
 app.listen(app.get('port'),()=>
 console.log('Server is listening on port',app.get('port')
  )
 );
+
+
+//rutas
+app.get("/producto", async (req,res) =>{
+    const connection = await database.getConnection();
+    const result = await connection.query("SELECT * FROM producto");
+    res.json(result)
+
+})

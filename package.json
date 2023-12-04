@@ -17,6 +17,7 @@
     "express-session": "^1.17.3",
     "express-validator": "^7.0.1",
     "mysql": "^2.18.1",
+    "promise-mysql": "^5.2.0",
     "sweetalert2": "^11.10.1"
   },
   "devDependencies": {

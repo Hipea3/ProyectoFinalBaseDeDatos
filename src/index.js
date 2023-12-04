@@ -313,3 +313,4 @@ app.get("/producto", async (req,res) =>{
     res.json(result)
 
 })
+
